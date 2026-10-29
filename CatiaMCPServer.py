@@ -250,62 +250,76 @@ async def add_axissystemstandard()->str:
     return "create a standard axissystem"
 
 @mcp.tool()
-async def add_plane(body_name:str, plane_name:str, selected:bool, offset:float, orientation:bool)->str:
+async def add_plane(body_name:str, selected:bool, offset:float, orientation:bool,originalplane_used:bool, originalplane_name:str|None=None)->str:
     """add a new plane
 
         Args:
         body_name: the name of the body
-        plane_name: choosed plane name for the new plane
-        selected: have to select a plane for add a plane; "True" means the AI have already selected a plane, otherwise, it is "False".
+        selected: The user select a plane for add a plane; "True" means the AI have already selected a plane, otherwise, it is "False".
         offset: the offset value of the reference plane 
         orientation: Orientation to reverse the plane from the reference plane.
+        originalplane_used: The AI has choosed original plane for the new plane
+        originalplane_name: The name of the original plane
     """
     global catia
     mydoc=catia.ActiveDocument
     rootpart=mydoc.Part
-
-    if plane_name=="PlaneXY":
-        originalplane=rootpart.OriginElements.PlaneXY
-        plane=rootpart.CreateReferenceFromObject(originalplane)
-    elif plane_name=="PlaneYZ":
-        originalplane=rootpart.OriginElements.PlaneYZ
-        plane=rootpart.CreateReferenceFromObject(originalplane)
-    elif plane_name=="PlaneZX":
-        originalplane=rootpart.OriginElements.PlaneZX
-        plane=rootpart.CreateReferenceFromObject(originalplane)
-    else:
+    if originalplane_used==True:
         if selected==True:
-            
+            return "Determine whether to use the original plane or the face selected by the user."
+        elif selected==False:
+            if originalplane_name=="PlaneXY":
+                originalplane=rootpart.OriginElements.PlaneXY
+                plane=rootpart.CreateReferenceFromObject(originalplane)
+            elif originalplane_name=="PlaneYZ":
+                originalplane=rootpart.OriginElements.PlaneYZ
+                plane=rootpart.CreateReferenceFromObject(originalplane)
+            elif originalplane_name=="PlaneZX":
+                originalplane=rootpart.OriginElements.PlaneZX
+                plane=rootpart.CreateReferenceFromObject(originalplane)
+            else:
+                return "The names of the original planes are only: PlaneXY, PlaneYZ, and PlaneZX."
+    elif originalplane_used==False:
+        if selected==False:
+            return "No plane has been selected to create a new plane."
+        elif selected==True:
             try:
                 selection=mydoc.Selection
             except:
                 return "don't get the Selection; the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
             if selection.Count==1:
-                brepname=selection.Item(1).Value.Name
+                brepname=selection.Item(1).Value.Name 
             else:
                 selection.clear()
                 return "please choose the plane again; the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
-            
-            s1=brepname.find("Brp:(")
-            s2=brepname.index(")",s1)
-            i=brepname[s1:s2+1]
-            boundary_parentname=re.search(r"\((.+?);",i).group(1)
-            boundary_index=re.search(r";(.+?)\)",i).group(1)
-            brepname2=f"RSur:(Face:(Brp:({boundary_parentname};{boundary_index});None:();Cf14:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
-            #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
-            
+            try:
+                s1=brepname.find("Face:(")
+                s2=brepname.index("_ResultOUT",s1)
+                s3=brepname.rindex(";",s1,s2)
+                boundary_face=brepname[s1:s3]
+                boundary_parentname=re.search(r"Brp:\((.+?);",boundary_face).group(1)
+                brepname2=f"FSur:({boundary_face};WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
+                #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+            except Exception as e:
+                return f"Error:{e}. brepname:{brepname}. Ensure that the selected face is not the original plane."
             mybody=rootpart.Bodies.Item(body_name)
-            i=mybody.Shapes.Count()
-            lastshape=mybody.Shapes.Item(i)
-
-            reference=rootpart.CreateReferenceFromBRepName(brepname2,lastshape)
+            try:
+                myshape=mybody.Shapes.Item(boundary_parentname)
+            except:
+                return f"can't find the shape({boundary_parentname}) in body({body_name})"
+            try:
+                reference=rootpart.CreateReferenceFromBRepName(brepname2,myshape)
+            except Exception as e:
+                return f"Error:{e}, brepname:{brepname}, brepname2:{brepname2}"
             plane=reference
     mybody=rootpart.Bodies.Item(body_name)
     try:
         newplane=rootpart.HybridShapeFactory.AddNewPlaneOffset(plane, offset, orientation)
+        mybody.InsertHybridShape(newplane)
+        rootpart.Update()
         return f"added a plane: {newplane.Name}"
-    except:
-        return "can't added a plane, the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
+    except Exception as e:
+        return f"Error:{e}, can't added a plane, the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
 
 @mcp.tool()
 async def delete_plane(user_order:bool, body_name:str, plane_name:str)->str:
