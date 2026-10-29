@@ -250,30 +250,160 @@ async def add_axissystemstandard()->str:
     return "create a standard axissystem"
 
 @mcp.tool()
-async def add_sketch(body_name:str,plane_name:str)->str:
-    '''create a sketch form origin plane 
+async def add_plane(body_name:str, plane_name:str, selected:bool, offset:float, orientation:bool)->str:
+    """add a new plane
 
         Args:
         body_name: the name of the body
-        plane_name: choosed plane name for the sketch
-    '''
+        plane_name: choosed plane name for the new plane
+        selected: have to select a plane for add a plane; "True" means the AI have already selected a plane, otherwise, it is "False".
+        offset: the offset value of the reference plane 
+        orientation: Orientation to reverse the plane from the reference plane.
+    """
     global catia
-    rootpart=catia.ActiveDocument.Part
+    mydoc=catia.ActiveDocument
+    rootpart=mydoc.Part
 
     if plane_name=="PlaneXY":
-        plane=rootpart.OriginElements.PlaneXY
+        originalplane=rootpart.OriginElements.PlaneXY
+        plane=rootpart.CreateReferenceFromObject(originalplane)
     elif plane_name=="PlaneYZ":
-        plane=rootpart.OriginElements.PlaneYZ
+        originalplane=rootpart.OriginElements.PlaneYZ
+        plane=rootpart.CreateReferenceFromObject(originalplane)
     elif plane_name=="PlaneZX":
-        plane=rootpart.OriginElements.PlaneZX
+        originalplane=rootpart.OriginElements.PlaneZX
+        plane=rootpart.CreateReferenceFromObject(originalplane)
     else:
-        return "planename isn't from origin plane"
+        if selected==True:
+            
+            try:
+                selection=mydoc.Selection
+            except:
+                return "don't get the Selection; the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
+            if selection.Count==1:
+                brepname=selection.Item(1).Value.Name
+            else:
+                selection.clear()
+                return "please choose the plane again; the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
+            
+            s1=brepname.find("Brp:(")
+            s2=brepname.index(")",s1)
+            i=brepname[s1:s2+1]
+            boundary_parentname=re.search(r"\((.+?);",i).group(1)
+            boundary_index=re.search(r";(.+?)\)",i).group(1)
+            brepname2=f"RSur:(Face:(Brp:({boundary_parentname};{boundary_index});None:();Cf14:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
+            #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+            
+            mybody=rootpart.Bodies.Item(body_name)
+            i=mybody.Shapes.Count()
+            lastshape=mybody.Shapes.Item(i)
+
+            reference=rootpart.CreateReferenceFromBRepName(brepname2,lastshape)
+            plane=reference
+    mybody=rootpart.Bodies.Item(body_name)
+    try:
+        newplane=rootpart.HybridShapeFactory.AddNewPlaneOffset(plane, offset, orientation)
+        return f"added a plane: {newplane.Name}"
+    except:
+        return "can't added a plane, the name of the original/native plane: PlaneXY, PlaneYZ, PlaneZX"
+
+@mcp.tool()
+async def delete_plane(user_order:bool, body_name:str, plane_name:str)->str:
+    """delete a plane
+
+        Args:
+        user_order: True or False; True means the user agrees that the AI to delete an element, otherwise,it is False.
+        body_name: the name of the body
+        plane_name: the name of the plane   
+    """
+    if user_order==True:
+        global catia
+        rootpart=catia.ActiveDocument.Part
+        mybody=rootpart.Bodies.Item(body_name)
+        try:
+            myplane=mybody.HybridShapes.Item(plane_name)
+        except:
+            return f"can't find the plane({plane_name}) in body({body_name})"
+        mydoc=catia.ActiveDocument
+        mydoc.Selection.Clear()
+        mydoc.Selection.Add(myplane)
+        mydoc.Selection.Delete()
+        return f"delete the shape({plane_name})"
+    else:
+        return "without user order"
+
+@mcp.tool()
+async def add_sketch(body_name:str, selected:bool, originplane_used:bool, originplane_name:str|None=None)->str:
+    '''create a sketch form plane 
+
+        Args:
+        body_name: the name of the body
+        originplane_used: the AI wants used the origin plane to create a sketch
+        originplane_name: choosed plane name for the sketch
+        selected: The user selects a plane to create a sketch; "True" means the user has already selected a plane, otherwise, it is "False".
+    '''
+    global catia
+    mydoc=catia.ActiveDocument
+    rootpart=mydoc.Part
+    if originplane_used==True:
+        if selected==True:
+            return "The user has already selected a plane, but the AI wants to use the origin plane. Please check the selection."
+        if selected==False:
+            if originplane_name=="PlaneXY":
+                plane=rootpart.OriginElements.PlaneXY
+            elif originplane_name=="PlaneYZ":
+                plane=rootpart.OriginElements.PlaneYZ
+            elif originplane_name=="PlaneZX":
+                plane=rootpart.OriginElements.PlaneZX
+            else:
+                return "The origin planes are named only : PlaneXY,PlaneYZ and PlaneZX"
+    elif originplane_used==False:
+        if selected==False:
+            return "Please selected a plane for the new sketch"
+        if selected==True:
+            
+            try:
+                selection=mydoc.Selection
+            except:
+                return "don't get the Selection"
+            if selection.Count==1:
+                brepname=selection.Item(1).Value.Name
+            else:
+                selection.clear()
+                return "please choose the plane again"
+            reference=rootpart.CreateReferenceFromName(brepname)
+            plane=reference
     mybody=rootpart.Bodies.Item(body_name)
     try:
         newsketch=mybody.Sketches.Add(plane)
         return f"added a sketch: {newsketch.Name}"
-    except:
-        return "can't added a sketch"
+    except Exception as e:
+        return f"Error:{e}, can't added a sketch. The name of the plane: {brepname}"
+
+@mcp.tool()
+async def delete_sketch(user_order:bool, body_name:str, sketch_name:str)->str:
+    """delete a sketch
+
+        Args:
+        user_order: True or False; True means the user agrees that the AI to delete an element, otherwise,it is False.
+        body_name: the name of the body
+        sketch_name: the name of the sketch   
+    """
+    if user_order==True:
+        global catia
+        rootpart=catia.ActiveDocument.Part
+        mybody=rootpart.Bodies.Item(body_name)
+        try:
+            mysketch=mybody.Sketches.Item(sketch_name)
+        except:
+            return f"can't find the sketch({sketch_name}) in body({body_name})"
+        mydoc=catia.ActiveDocument
+        mydoc.Selection.Clear()
+        mydoc.Selection.Add(mysketch)
+        mydoc.Selection.Delete()
+        return f"delete the shape({sketch_name})"
+    else:
+        return "without user order"
 
 @mcp.tool()
 async def create_point2d(body_name:str,sketch_name:str,x:float,y:float)->str:
@@ -459,6 +589,36 @@ async def add_monoeltcst(csttype:int,elem_name:str,sketch_name:str,body_name:str
         return "can't add a constraint"  
 
 @mcp.tool()
+async def delete_geoelement(user_order:bool, body_name:str, sketch_name:str, geoelement_name:str)->str:
+    """delete a geometric Element
+
+        Args:
+        user_order: True or False; True means the user agrees that the AI to delete an element, otherwise,it is False.
+        body_name: the name of the body
+        sketch_name: the name of the sketch
+        geoelement_name: the name of the geometric Element   
+    """
+    if user_order==True:
+        global catia
+        rootpart=catia.ActiveDocument.Part
+        mybody=rootpart.Bodies.Item(body_name)
+        try:
+            mysketch=mybody.Sketches.Item(sketch_name)
+        except:
+            return f"can't find the sketch({sketch_name}) in body({body_name})"
+        try:
+            mygeoelt=mysketch.GeometricElements.Item(geoelement_name)
+        except:
+            return f"can't find the geometric element({geoelement_name}) in sketch({sketch_name})"
+        mydoc=catia.ActiveDocument
+        mydoc.Selection.Clear()
+        mydoc.Selection.Add(mygeoelt)
+        mydoc.Selection.Delete()
+        return f"delete the geometric element({geoelement_name})"
+    else:
+        return "without user order"
+
+@mcp.tool()
 async def add_bieltcst(csttype:int,firstelem_name:str,secondelem_name:str,sketch_name:str,body_name:str)->str:
     '''add a constraint in a sketch for two element
 
@@ -556,7 +716,37 @@ async def add_trieltcst(csttype:int,firstelem_name:str,secondelem_name:str,third
         return "can't add a constraint"
 
 @mcp.tool()
-async def add_pad(body_name:str,sketch_name:str,h: float,pad_name:str)->str:
+async def delete_constraint(user_order:bool, body_name:str, sketch_name:str, cst_name:str)->str:
+    """delete a geometric Element
+
+        Args:
+        user_order: True or False; True means the user agrees that the AI to delete an element, otherwise,it is False.
+        body_name: the name of the body
+        sketch_name: the name of the sketch
+        cst_name: the name of the constraint  
+    """
+    if user_order==True:
+        global catia
+        rootpart=catia.ActiveDocument.Part
+        mybody=rootpart.Bodies.Item(body_name)
+        try:
+            mysketch=mybody.Sketches.Item(sketch_name)
+        except:
+            return f"can't find the sketch({sketch_name}) in body({body_name})"
+        try:
+            mycst=mysketch.Constraints.Item(cst_name)
+        except:
+            return f"can't find the constraint({cst_name}) in sketch({sketch_name})"
+        mydoc=catia.ActiveDocument
+        mydoc.Selection.Clear()
+        mydoc.Selection.Add(mycst)
+        mydoc.Selection.Delete()
+        return f"delete the constraint({cst_name})"
+    else:
+        return "without user order"
+
+@mcp.tool()
+async def add_pad(body_name:str,sketch_name:str,h: float, pad_name:str, pad_prismdirorient:int)->str:
     '''add a new pad
 
         Args:
@@ -564,6 +754,7 @@ async def add_pad(body_name:str,sketch_name:str,h: float,pad_name:str)->str:
         sketch_name: the name of the sketch
         h: the long/height for the pad
         pad_name:the name for the new pad
+        pad_prismdirorient: the value of CatPrismOrientation, that can be in tool(enum_CatPrismOrientaion) found.
     '''
     global catia
     rootpart=catia.ActiveDocument.Part
@@ -572,24 +763,27 @@ async def add_pad(body_name:str,sketch_name:str,h: float,pad_name:str)->str:
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
+    #虽然pad是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
     try:
         newpad=rootpart.ShapeFactory.AddNewPad(mysketch,h)
-    except:
-        return "can't add a pad"
+        newpad.DirectionOrientation=pad_prismdirorient
+    except Exception as e:
+        return f"Error:{e}, can't add a pad"
     else:
         rootpart.Update()
         newpad.Name=pad_name
         return f"create a pad:{newpad.Name}"
 
 @mcp.tool()
-async def add_pocket(body_name:str,sketch_name:str,h:float,pocket_name:str)->str:
+async def add_pocket(body_name:str,sketch_name:str,h:float,pocket_name:str, pocket_prismdirorient:int)->str:
     '''add a new pocket
 
         Args:
         body_name: the name of the body
         sketch_name: the name of the sketch
         h: the depth for the pocket
-        pad_name:the name for the new pad
+        pocket_name:the name for the new pocket
+        pocket_prismdirorient: the value of CatPrismOrientation, that can be in tool(enum_CatPrismOrientaion) found.
     '''
     global catia
     rootpart=catia.ActiveDocument.Part
@@ -598,24 +792,29 @@ async def add_pocket(body_name:str,sketch_name:str,h:float,pocket_name:str)->str
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
+    #虽然pocket是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
     try:
         newpocket=rootpart.ShapeFactory.AddNewPocket(mysketch,h)
-    except:
-        return "can't add a pocket"
+        newpocket.DirectionOrientation=pocket_prismdirorient
+    except Exception as e:
+        return f"Error:{e},can't add a pocket"
     else:
         rootpart.Update()
         newpocket.Name=pocket_name
         return f"create a pocket:{newpocket.Name}"
-
+                
 @mcp.tool()
-async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,rotationaxis_name:str)->str:
+async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool, angle:float, absoluteaxis_used:bool, absoluteaxis_name:str|None=None)->str:
     '''add a new shaft
 
         Args:
         body_name: the name of the body
         sketch_name: the name of the sketch
         shaft_name:the name for the new shaft
-        rotationaxis_name: the name of the rotation axis
+        selected: The user have to select a line/axis for create a shaft; "True" means the user have already selected a line/axis, otherwise, it is "False".
+        absoluteaxis_used: "True" means the AI thinks absolute axis can serve as rotation axis, otherwise, it is "False".
+        absoluteaxis_name: the name of the absolute axis
+        angle: the ratational angle
     '''
     global catia
     rootpart=catia.ActiveDocument.Part
@@ -624,50 +823,127 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,rotationaxis_n
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
-    try:
-        emptyref=rootpart.CreateReferenceFromName("")
-        newshaft=rootpart.ShapeFactory.AddNewShaftFromRef(emptyref)
-    except:
-        return "can't create a empty Reference"
-    else:
-        try:
-            profileref=rootpart.CreateReferenceFromObject(mysketch)
-            newshaft.SetProfileElement(profileref)
-        except:
-            return "can't set the profile for shaft"
-        else:
+    #虽然shaft是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
+    if selected==False:
+        if absoluteaxis_used==False:
+            return "don't choose a line/axis for create a shaft"
+        if absoluteaxis_used==True:
             try:
-                if rotationaxis_name=="VDirection":
-                    axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
-                    axisref=axis2d.GetItem("VDirection")
-                elif rotationaxis_name=="HDirection":
-                    axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
-                    axisref=axis2d.GetItem("HDirection")
+                #用空引用建空壳shaft
+                emptyref=rootpart.CreateReferenceFromName("")
+                newshaft=rootpart.ShapeFactory.AddNewShaftFromRef(emptyref)
+            except Exception as e:
+                return f"Error: {e}, can't create a empty Reference"
+            else:
+                try:
+                    #设轮廓
+                    profileref=rootpart.CreateReferenceFromObject(mysketch)
+                    newshaft.SetProfileElement(profileref)
+                except Exception as e:
+                    catia.StartCommand("Undo")
+                    return f"Error: {e}, can't set the profile for shaft"
                 else:
-                    rotationaxis=mysketch.GeometricElements.Item(rotationaxis_name)
-                    geo_type=rotationaxis.GeometricType
-                    if not geo_type==3:
-                        return "rotationaxis is not a line"
-                    boundary_index=re.search(r"\.(\d+)",rotationaxis_name).group(1)
-                    brepname=f"WireREdge:(Wire:(Brp:({mysketch.Name};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
-                    axisref=rootpart.CreateReferenceFromBRepName(brepname,mysketch)
-                newshaft.RevoluteAxis=axisref
-            except:
-                return "can't set axis for shaft"
-            else:    
-                rootpart.Update()
-                newshaft.Name=shaft_name
-                return f"create a shaft:{shaft_name}"
-    
+                    try:
+                        #设旋转轴
+                        if absoluteaxis_name=="VDirection":
+                            axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
+                            axisref=axis2d.GetItem("VDirection")
+                        elif absoluteaxis_name=="HDirection":
+                            axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
+                            axisref=axis2d.GetItem("HDirection")
+                        else:
+                            catia.StartCommand("Undo")
+                            return "The rotation axis has only two names: VDirection and HDirection."
+                           
+                        newshaft.RevoluteAxis=axisref
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error: {e}, can't set the absoluted axis as a rotation axis"
+                    try:
+                        newshaft.Firstangle.Value=angle
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error:{e}, can't set the rotational angle"
+                    else:    
+                        rootpart.Update()
+                        newshaft.Name=shaft_name
+                        return f"create a shaft:{shaft_name}"
+    if selected==True:
+        if absoluteaxis_used==True:
+            return "The user has already chosen a line/axis. Please discuss with the user whether this line/axis is an absolute axis or not."
+        if absoluteaxis_used==False:
+            #必须在操作前读取Selection
+            mydoc=catia.ActiveDocument
+            try:
+                selection=mydoc.Selection
+            except Exception as e:
+                catia.StartCommand("Undo")
+                return f"Error: {e}, don't get the Selection"
+            if selection.Count==1:
+                try:
+                    brepname=selection.Item(1).Value.Name
+                except Exception as e:
+                    return f"Error:{e}, no brepname"
+            else:
+                selection.clear()
+                catia.StartCommand("Undo")
+                return "please choose the line again"
+            try:
+                #用空引用建空壳shaft
+                emptyref=rootpart.CreateReferenceFromName("")
+                newshaft=rootpart.ShapeFactory.AddNewShaftFromRef(emptyref)
+            except Exception as e:
+                return f"Error: {e}, can't create a empty Reference"
+            else:
+                try:
+                    #设轮廓
+                    profileref=rootpart.CreateReferenceFromObject(mysketch)
+                    newshaft.SetProfileElement(profileref)
+                except Exception as e:
+                    catia.StartCommand("Undo")
+                    return f"Erroe: {e}, can't set the profile for shaft"
+                else:
+                    try:
+                        #设旋转轴
+                        s1=brepname.find("Brp:(")
+                        s2=brepname.index(")",s1)
+                        i=brepname[s1:s2+1]
+                        boundary_parentname=re.search(r"\((.+?);",i).group(1)
+                        boundary_index=re.search(r";(.+?)\)",i).group(1)
+                        brepname2=f"WireREdge:(Wire:(Brp:({boundary_parentname};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
+                        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+                        if boundary_parentname!=sketch_name:
+                            catia.StartCommand("Undo")
+                            return f"can't find the shape({boundary_parentname}) in body({body_name})"
+                        else:                    
+                            axisref=rootpart.CreateReferenceFromBRepName(brepname2,mysketch)
+                        
+                        newshaft.RevoluteAxis=axisref
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error: {e}, can't set line/axis for shaft"
+                    try:
+                        newshaft.Firstangle.Value=angle
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error:{e}, can't set the rotational angle"
+                    else:    
+                        rootpart.Update()
+                        newshaft.Name=shaft_name
+                        return f"create a shaft:{shaft_name}"
+
 @mcp.tool()
-async def add_groove(body_name:str,sketch_name:str,groove_name:str,rotationaxis_name:str)->str:
+async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool, angle:float, absoluteaxis_used:bool,absoluteaxis_name:str|None=None)->str:
     '''add a new groove
 
         Args:
         body_name: the name of the body
         sketch_name: the name of the sketch
         groove_name:the name for the new groove
-        rotationaxis_name: the name of the rotation axis
+        selected:The user have to select a line/axis for create a groove; "True" means the user have already selected a line/axis, otherwise, it is "False".
+        absoluteaxis_used: "True" means the AI thinks absolute axis can serve as rotation axis, otherwise, it is "False".
+        absoluteaxis_name: the name of the absolute axis
+        angle: rotational angle
     '''
     global catia
     rootpart=catia.ActiveDocument.Part
@@ -676,45 +952,120 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,rotationaxis_
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
-    try:
-        emptyref=rootpart.CreateReferenceFromName("")
-        newgroove=rootpart.ShapeFactory.AddNewGrooveFromRef(emptyref)
-    except:
-        return "can't create a empty Reference"
-    else:
-        try:
-            profileref=rootpart.CreateReferenceFromObject(mysketch)
-            newgroove.SetProfileElement(profileref)
-        except:
-            return "can't set the profile for groove"
-        else:
+    #虽然shaft是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
+    if selected==False:
+        if absoluteaxis_used==False:
+            return "don't choose a line/axis for create a shaft"
+        if absoluteaxis_used==True:
             try:
-                if rotationaxis_name=="VDirection":
-                    axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
-                    axisref=axis2d.GetItem("VDirection")
-                elif rotationaxis_name=="HDirection":
-                    axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
-                    axisref=axis2d.GetItem("HDirection")
+                #用空引用建空壳groove
+                emptyref=rootpart.CreateReferenceFromName("")
+                newgroove=rootpart.ShapeFactory.AddNewGrooveFromRef(emptyref)
+            except Exception as e:
+                return f"Error:{e}, can't create a empty Reference"
+            else:
+                try:
+                    #设轮廓
+                    profileref=rootpart.CreateReferenceFromObject(mysketch)
+                    newgroove.SetProfileElement(profileref)
+                except Exception as e:
+                    catia.StartCommand("Undo")
+                    return f"Error: {e}, can't set the profile for groove"
                 else:
-                    rotationaxis=mysketch.GeometricElements.Item(rotationaxis_name)
-                    geo_type=rotationaxis.GeometricType
-                    if not geo_type==3:
-                        return "rotationaxis is not a line"
-                    boundary_index=re.search(r"\.(\d+)",rotationaxis_name).group(1)
-                    brepname=f"WireREdge:(Wire:(Brp:({mysketch.Name};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
-                    axisref=rootpart.CreateReferenceFromBRepName(brepname,mysketch)
-                newgroove.RevoluteAxis=axisref
-            except:
-                return "can't set axis for groove"
-            else:    
-                rootpart.Update()
-                newgroove.Name=groove_name
-                return f"create a groove:{groove_name}"
+                    try:
+                        #设旋转轴
+                        if absoluteaxis_name=="VDirection":
+                            axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
+                            axisref=axis2d.GetItem("VDirection")
+                        elif absoluteaxis_name=="HDirection":
+                            axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
+                            axisref=axis2d.GetItem("HDirection")
+                        else:
+                            catia.StartCommand("Undo")
+                            return "The rotation axis has only two names: VDirection and HDirection."
+                           
+                        newgroove.RevoluteAxis=axisref
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error: {e}, can't set the absoluted axis as a rotation axis"
+                    try:
+                        newgroove.Firstangle.Value=angle
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error:{e}, can't set the rotational angle"
+                    else:    
+                        rootpart.Update()
+                        newgroove.Name=groove_name
+                        return f"create a groove:{groove_name}"
+    if selected==True:
+        if absoluteaxis_used==True:
+            return "The user has already chosen a line/axis. Please discuss with the user whether this line/axis is an absolute axis or not."
+        if absoluteaxis_used==False:
+            #必须在操作前读取Selection
+            mydoc=catia.ActiveDocument
+            try:
+                selection=mydoc.Selection
+            except Exception as e:
+                catia.StartCommand("Undo")
+                return f"Error: {e}, don't get the Selection"
+            if selection.Count==1:
+                try:
+                    brepname=selection.Item(1).Value.Name
+                except Exception as e:
+                    return f"Error:{e}, no brepname"
+            else:
+                selection.clear()
+                catia.StartCommand("Undo")
+                return "please choose the line again"
+            try:
+                #用空引用建空壳groove
+                emptyref=rootpart.CreateReferenceFromName("")
+                newgroove=rootpart.ShapeFactory.AddNewGrooveFromRef(emptyref)
+            except Exception as e:
+                return f"Error: {e}, can't create a empty Reference"
+            else:
+                try:
+                    #设轮廓
+                    profileref=rootpart.CreateReferenceFromObject(mysketch)
+                    newgroove.SetProfileElement(profileref)
+                except Exception as e:
+                    catia.StartCommand("Undo")
+                    return f"Erroe: {e}, can't set the profile for groove"
+                else:
+                    try:
+                        #设旋转轴
+                
+                        s1=brepname.find("Brp:(")
+                        s2=brepname.index(")",s1)
+                        i=brepname[s1:s2+1]
+                        boundary_parentname=re.search(r"\((.+?);",i).group(1)
+                        boundary_index=re.search(r";(.+?)\)",i).group(1)
+                        brepname2=f"WireREdge:(Wire:(Brp:({boundary_parentname};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
+                        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+                        if boundary_parentname!=sketch_name:
+                            catia.StartCommand("Undo")
+                            return f"can't find the shape({boundary_parentname}) in body({body_name})"
+                        else:                    
+                            axisref=rootpart.CreateReferenceFromBRepName(brepname2,mysketch)
+                        
+                        newgroove.RevoluteAxis=axisref
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error: {e}, can't set line/axis for groove"
+                    try:
+                        newgroove.Firstangle.Value=angle
+                    except Exception as e:
+                        catia.StartCommand("Undo")
+                        return f"Error:{e}, can't set the rotational angle"
+                    else:    
+                        rootpart.Update()
+                        newgroove.Name=groove_name
+                        return f"create a groove:{groove_name}"
 
 @mcp.tool()
 async def add_hole(
     body_name:str,hole_name:str,
-    selectet:bool,x:float,y:float,z:float,
+    selected:bool,x:float,y:float,
     hole_type:int,hole_anchormode:int,a2:float,d2:float,l2:float,countersunk_mode:int,
     hole_bottomtype:int,bottomlimit_mode:int,d1:float,a1:float,l1:float,
     hole_threadingmode:int,hole_threadside:int,d3:float,l3:float,p3:float
@@ -724,10 +1075,9 @@ async def add_hole(
         Args:
         body_name: the name of the body
         hole_name:the name for the new hole
-        selectet: the user have to select a plane for create a hole; "True" means the user have already selected a plane, otherwise, it is "False".
-        x: Origin point x absolute coordinate
-        y: Origin point y absolute coordinate
-        z: Origin point z absolute coordinate
+        selected: The user have to select a plane for create a hole; "True" means the user have already selected a plane, otherwise, it is "False".
+        x: the x-coordinate relative to the origin
+        y: the y-coordinate relative to the origin
         Sets the origin point which the hole is anchored to. If mandatory, the entry point will be projected onto a tangent plane.
         hole_type: the value of CatHoleType, that can be in tool(enum_CatHoleType) found.
         hole_anchormode: the value of CatHoleAnchorMode, that can be in tool(enum_CatHoleAnchorMode) found; it's pertinent when the hole type is: Counterbored or Counterdrilled
@@ -746,8 +1096,9 @@ async def add_hole(
         l3: the value of the thread depthe; it's valid when the hole is threaded, and the thread depth is not bigger than the hole depth.
         p3: the value of the thread pitch; it's valid when the hole is threaded.
     '''
-    if selectet==True:
+    if selected==True:
         global catia
+        #必须在操作前读取selection
         mydoc=catia.ActiveDocument
         rootpart=mydoc.Part
         try:
@@ -757,24 +1108,32 @@ async def add_hole(
         if selection.Count==1:
             brepname=selection.Item(1).Value.Name
         else:
+            selection.clear()
             return "please choose the plane again"
         
-        s1=brepname.find("Brp:(")
-        s2=brepname.index(")",s1)
-        i=brepname[s1:s2+1]
-        boundary_parentname=re.search(r"\((.+?);",i).group(1)
-        boundary_index=re.search(r";(.+?)\)",i).group(1)
-        brepname2=f"FSur:(Face:(Brp:({boundary_parentname};{boundary_index});None:();Cf14:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
+        s1=brepname.find("Face:(")
+        s2=brepname.index("_ResultOUT",s1)
+        s3=brepname.rindex(";",s1,s2)
+        boundary_face=brepname[s1:s3]
+        boundary_parentname=re.search(r"Brp:\((.+?);",boundary_face).group(1)
+        brepname2=f"FSur:({boundary_face};WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
+        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
         mybody=rootpart.Bodies.Item(body_name)
         try:
             myshape=mybody.Shapes.Item(boundary_parentname)
         except:
             return f"can't find the shape({boundary_parentname}) in body({body_name})"
-
-        reference1=rootpart.CreateReferenceFromBRepName(brepname2,myshape)
-        myhole=rootpart.ShapeFactory.AddNewHoleFromPoint(x,y,z,reference1,l1)
+        try:
+            reference1=rootpart.CreateReferenceFromBRepName(brepname2,myshape)
+        except Exception as e:
+            return f"Error:{e}, brepname:{brepname}, brepname2:{brepname2}"
         
-        #Extension
+        try:
+            myhole=rootpart.ShapeFactory.AddNewHoleFromPoint(0,0,0,reference1,l1)
+        except:
+            return "make sure the choosed plane is right"
+        #Extension延伸
+        #BottomLimit.LimitMode目前只开发三种模式
         if bottomlimit_mode==0:
             myhole.BottomLimit.Dimension.Value=l1
             if hole_bottomtype==2:
@@ -795,7 +1154,7 @@ async def add_hole(
         myhole.BottomLimit.LimitMode=bottomlimit_mode
         myhole.Diameter.Value=d1
 
-        #Type
+        #Type类型
         if hole_type==0:
             myhole.Type=hole_type
         elif hole_type==1:
@@ -821,12 +1180,13 @@ async def add_hole(
         elif hole_type==4:
             myhole.Type=hole_type
             myhole.CounterDrilledMode=0
+            #这里把CounterDrilledMode锁定为catCDModeNoCountersunkDiameter；是因为：Catia V5文档没有这个属性，且相关的值的变动Macros也展示不清晰
             myhole.HeadDiameter.Value=d2
             myhole.HeadDepth.Value=l2
             myhole.HeadAngle.Value=a2
             myhole.AnchorMode=hole_anchormode
 
-        #Thread Definition
+        #Thread Definition螺纹定义
         if hole_threadingmode==1:
             myhole.ThreadingMode=hole_threadingmode
         elif hole_threadingmode==0:
@@ -839,12 +1199,158 @@ async def add_hole(
             myhole.ThreadDiameter.Value=d3
             myhole.ThreadDepth.Value=l3
             myhole.ThreadPitch.Value=p3
-
+        
+        
+        
+        mysketch=myhole.Sketch
+        rootpart.InWorkObject=mysketch
+        factory2d=mysketch.OpenEdition()
+        mypoint=mysketch.GeometricElements.Item("Point.1")
+        mypoint.SetData(x,y)
+        factory2d=mysketch.CloseEdition()
+        rootpart.InWorkObject=myhole
+        
         rootpart.Update()
         myhole.Name=hole_name
         return "the hole is add"
     else:
         return "please in catia choose a plane for the new hole"
+
+@mcp.tool()
+async def add_edgefillet(body_name:str, edgefillet_name:str,selected:bool, r:int)->str:
+    '''add a new edge fillet
+
+        Args:
+        body_name: the name of the body
+        edgefillet_name:the name for the new edgefillet
+        selected:The user have to select a edge for create a edge fillet; "True" means the user have already selected a edge, otherwise, it is "False".
+        r: the radius of the edge fillet
+    '''
+    if selected==True:
+        global catia
+        #必须在操作前读取selection
+        mydoc=catia.ActiveDocument
+        rootpart=mydoc.Part
+        try:
+            selection=mydoc.Selection
+        except:
+            return "don't get the Selection"
+        if selection.Count==1:
+            brepname=selection.Item(1).Value.Name
+        else:
+            selection.clear()
+            return "please choose the edge again"
+    else:
+        return "the user have to select a Edge for the edge fillet"
+    
+    s1=brepname.find("REdge:(")
+    s2=brepname.index("_ResultOUT",s1)
+    s3=brepname.rindex(";",s1,s2)
+    boundary_edge=brepname[s1:s3]
+    contextobj_name=brepname[s3+1:s2]
+    brepname2=f"{boundary_edge};WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29)"
+    #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+    mybody=rootpart.Bodies.Item(body_name)
+    try:
+        myshape=mybody.Shapes.Item(contextobj_name)
+    except:
+        return f"can't find the shape({contextobj_name}) in body({body_name}), brepname:{brepname}, brepname2:{brepname2}"
+    try:
+        reference1=rootpart.CreateReferenceFromBRepName(brepname2,myshape)
+    except Exception as e:
+        return f"Error:{e}, brepname:{brepname}, brepname2:{brepname2}"
+    try:
+        emptyref=rootpart.CreateReferenceFromName("")
+        #catTangencyFilletEdgePropagation=1
+        myedgefillet=rootpart.ShapeFactory.AddNewSolidEdgeFilletWithConstantRadius(emptyref,1,r)
+        myedgefillet.AddObjectToFillet(reference1)
+        rootpart.Update()
+        myedgefillet.Name=edgefillet_name
+        return f"add a new edge fillet:{edgefillet_name}"
+    except Exception as e:
+        catia.StartCommand("Undo")
+        return f"Error:{e}, can't add a edge fillet."
+
+@mcp.tool()
+async def add_chamfer(body_name:str, chamfer_name:str,selected:bool, l:float, angle:float)->str:
+    '''add a new chamfer
+
+        Args:
+        body_name: the name of the body
+        chamfer_name:the name for the new chamfer
+        selected:The user have to select a edge for create a chamfer; "True" means the user have already selected a edge, otherwise, it is "False".
+        l: chamfer length
+        angle: chamfer angle
+    '''
+    if selected==True:
+        global catia
+        #必须在操作前读取selection
+        mydoc=catia.ActiveDocument
+        rootpart=mydoc.Part
+        try:
+            selection=mydoc.Selection
+        except:
+            return "don't get the Selection"
+        if selection.Count==1:
+            brepname=selection.Item(1).Value.Name
+        else:
+            selection.clear()
+            return "please choose the edge again"
+    else:
+        return "the user have to select a Edge for the chamfer"
+    
+    s1=brepname.find("REdge:(")
+    s2=brepname.index("_ResultOUT",s1)
+    s3=brepname.rindex(";",s1,s2)
+    boundary_edge=brepname[s1:s3]
+    contextobj_name=brepname[s3+1:s2]
+    brepname2=f"{boundary_edge};WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29)"
+    #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
+    mybody=rootpart.Bodies.Item(body_name)
+    try:
+        myshape=mybody.Shapes.Item(contextobj_name)
+    except:
+        return f"can't find the shape({contextobj_name}) in body({body_name}), brepname:{brepname}, brepname2:{brepname2}"
+    try:
+        reference1=rootpart.CreateReferenceFromBRepName(brepname2,myshape)
+    except Exception as e:
+        return f"Error:{e}, brepname:{brepname}, brepname2:{brepname2}"
+    try:
+        emptyref=rootpart.CreateReferenceFromName("")
+        #catTangencyFilletEdgePropagation=1
+        mychamfer=rootpart.ShapeFactory.AddNewChamfer(emptyref,0,1,1,l,angle)
+        mychamfer.AddElementToChamfer(reference1)
+        rootpart.Update()
+        mychamfer.Name=chamfer_name
+        return f"add a new chamfer:{chamfer_name}"
+    except Exception as e:
+        catia.StartCommand("Undo")
+        return f"Error:{e}, can't add a chamfer."
+
+@mcp.tool()
+async def delete_shape(user_order: bool, body_name:str, shape_name: str)->str:
+    """delete a shape
+
+        Args:
+        user_order: user_order: True or False; True means the user agrees that the AI to delete an element, otherwise,it is False.
+        body_name: the name of the body
+        shape_name: the name of the shape   
+    """
+    if user_order==True:
+        global catia
+        rootpart=catia.ActiveDocument.Part
+        mybody=rootpart.Bodies.Item(body_name)
+        try:
+            myshape=mybody.Shapes.Item(shape_name)
+        except:
+            return f"can't find the shape({shape_name}) in body({body_name})"
+        mydoc=catia.ActiveDocument
+        mydoc.Selection.Clear()
+        mydoc.Selection.Add(myshape)
+        mydoc.Selection.Delete()
+        return f"delete the shape({shape_name})"
+    else:
+        return "without user order"
 
 @mcp.tool()
 async def catiaquit(user_order:bool)->str:
@@ -1145,12 +1651,12 @@ async def info_pad(partdoc_name:str,body_name:str,pad_name:str)->str:
         return f"can't find body {body_name} in part {partdoc_name}"
     else:
         try:
-            mypad=mybody.Item(pad_name)
+            mypad=mybody.Shapes.Item(pad_name)
         except:
             return f"can't find pad {pad_name} in body {body_name}"
         else:
             mysketch=mypad.Sketch
-            mylength=mypad.FirstLimit.Value
+            mylength=mypad.FirstLimit.Dimension.Value
             return f"pad sketch: {mysketch.Name}; Length: {mylength}"
 
 @mcp.tool(title="Pocket-Properties")
@@ -1171,12 +1677,12 @@ async def info_pocket(partdoc_name:str,body_name:str,pocket_name:str)->str:
         return f"can't find body {body_name} in part {partdoc_name}"
     else:
         try:
-            mypocket=mybody.Item(pocket_name)
+            mypocket=mybody.Shapes.Item(pocket_name)
         except:
-            return f"can't find pad {pocket_name} in body {body_name}"
+            return f"can't find pocket {pocket_name} in body {body_name}"
         else:
             mysketch=mypocket.Sketch
-            mylength=mypocket.FirstLimit.Value
+            mylength=mypocket.FirstLimit.Dimension.Value
             return f"pocket sketch: {mysketch.Name}; Length: {mylength}"
 
 @mcp.tool(title="Shaft-Properties")
@@ -1197,9 +1703,9 @@ async def info_shaft(partdoc_name:str,body_name:str,shaft_name:str)->str:
         return f"can't find body {body_name} in part {partdoc_name}"
     else:
         try:
-            myshaft=mybody.Item(shaft_name)
+            myshaft=mybody.Shapes.Item(shaft_name)
         except:
-            return f"can't find pad {shaft_name} in body {body_name}"
+            return f"can't find shaft {shaft_name} in body {body_name}"
         else:
             mysketch=myshaft.Sketch
             myfirstangle=myshaft.FirstAngle.Value
@@ -1225,9 +1731,9 @@ async def info_groove(partdoc_name:str,body_name:str,groove_name:str)->str:
         return f"can't find body {body_name} in part {partdoc_name}"
     else:
         try:
-            mygroove=mybody.Item(groove_name)
+            mygroove=mybody.Shapes.Item(groove_name)
         except:
-            return f"can't find pad {groove_name} in body {body_name}"
+            return f"can't find groove {groove_name} in body {body_name}"
         else:
             mysketch=mygroove.Sketch
             myfirstangle=mygroove.FirstAngle.Value
@@ -1350,6 +1856,16 @@ async def check_CatCSHoleMode()->dict:
         "catCSModeAngleDiameter":2
     }
     return CatCSHoleMode
+
+@mcp.tool(title="enum_CatPrismOrientation")
+async def check_CatPrismOrientation()->dict:
+    '''check the value of the CatPrismOrientation
+    '''
+    CatPrismOrientation={
+        "catRegularOrientation":0,
+        "catInverseOrientation":1
+    }
+    return CatPrismOrientation
 
 @mcp.tool(title="Captureviewer")
 async def get_capture():
