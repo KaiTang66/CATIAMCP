@@ -347,31 +347,35 @@ async def delete_plane(user_order:bool, body_name:str, plane_name:str)->str:
         return "without user order"
 
 @mcp.tool()
-async def add_sketch(body_name:str, selected:bool, originplane_used:bool, originplane_name:str|None=None)->str:
+async def add_sketch(body_name:str, selected:bool, nontopologicalplane_used:bool, nontopologicalplane_name:str|None=None)->str:
     '''create a sketch form plane 
 
         Args:
         body_name: the name of the body
-        originplane_used: the AI wants used the origin plane to create a sketch
-        originplane_name: choosed plane name for the sketch
+        nontopologicalplane_used: the AI wants used the non-topological plane to create a sketch
+        nontopologicalplane_name: choosed non-topological plane name for the sketch
         selected: The user selects a plane to create a sketch; "True" means the user has already selected a plane, otherwise, it is "False".
     '''
     global catia
     mydoc=catia.ActiveDocument
     rootpart=mydoc.Part
-    if originplane_used==True:
+    mybody=rootpart.Bodies.Item(body_name)
+    if nontopologicalplane_used==True:
         if selected==True:
             return "The user has already selected a plane, but the AI wants to use the origin plane. Please check the selection."
         if selected==False:
-            if originplane_name=="PlaneXY":
+            if nontopologicalplane_name=="PlaneXY":
                 plane=rootpart.OriginElements.PlaneXY
-            elif originplane_name=="PlaneYZ":
+            elif nontopologicalplane_name=="PlaneYZ":
                 plane=rootpart.OriginElements.PlaneYZ
-            elif originplane_name=="PlaneZX":
+            elif nontopologicalplane_name=="PlaneZX":
                 plane=rootpart.OriginElements.PlaneZX
             else:
-                return "The origin planes are named only : PlaneXY,PlaneYZ and PlaneZX"
-    elif originplane_used==False:
+                try:
+                    plane=mybody.HybridShapes.Item(nontopologicalplane_name)
+                except Exception as e: 
+                    return f"Error:{e}.The origin planes are named only : PlaneXY,PlaneYZ and PlaneZX"
+    elif nontopologicalplane_used==False:
         if selected==False:
             return "Please selected a plane for the new sketch"
         if selected==True:
@@ -385,9 +389,12 @@ async def add_sketch(body_name:str, selected:bool, originplane_used:bool, origin
             else:
                 selection.clear()
                 return "please choose the plane again"
-            reference=rootpart.CreateReferenceFromName(brepname)
+            try:
+                reference=rootpart.CreateReferenceFromName(brepname)
+            except Exception as e:
+                return f"Error:{e}, brepname:{brepname}"
             plane=reference
-    mybody=rootpart.Bodies.Item(body_name)
+    
     try:
         newsketch=mybody.Sketches.Add(plane)
         return f"added a sketch: {newsketch.Name}"
