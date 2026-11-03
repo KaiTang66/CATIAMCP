@@ -10,13 +10,10 @@ import os
 
 load_dotenv()
 
-#Initialization MCPServer
 mcp = FastMCP("Catia") 
 
-#Constant
 CATIAMCP_FILE=os.getenv("catiamcp_file")
 
-#Global constant
 catia=None
 try:   
     catia = win32com.client.Dispatch("Catia.Application")
@@ -299,7 +296,6 @@ async def add_plane(body_name:str, selected:bool, offset:float, orientation:bool
                 boundary_face=brepname[s1:s3]
                 boundary_parentname=re.search(r"Brp:\((.+?);",boundary_face).group(1)
                 brepname2=f"FSur:({boundary_face};WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
-                #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
             except Exception as e:
                 return f"Error:{e}. brepname:{brepname}. Ensure that the selected face is not the original plane."
             mybody=rootpart.Bodies.Item(body_name)
@@ -784,7 +780,6 @@ async def add_pad(body_name:str,sketch_name:str,h: float, pad_name:str, pad_pris
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
-    #虽然pad是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
     try:
         newpad=rootpart.ShapeFactory.AddNewPad(mysketch,h)
         newpad.DirectionOrientation=pad_prismdirorient
@@ -813,7 +808,6 @@ async def add_pocket(body_name:str,sketch_name:str,h:float,pocket_name:str, pock
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
-    #虽然pocket是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
     try:
         newpocket=rootpart.ShapeFactory.AddNewPocket(mysketch,h)
         newpocket.DirectionOrientation=pocket_prismdirorient
@@ -850,14 +844,12 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool,
             return "don't choose a line/axis for create a shaft"
         if absoluteaxis_used==True:
             try:
-                #用空引用建空壳shaft
                 emptyref=rootpart.CreateReferenceFromName("")
                 newshaft=rootpart.ShapeFactory.AddNewShaftFromRef(emptyref)
             except Exception as e:
                 return f"Error: {e}, can't create a empty Reference"
             else:
                 try:
-                    #设轮廓
                     profileref=rootpart.CreateReferenceFromObject(mysketch)
                     newshaft.SetProfileElement(profileref)
                 except Exception as e:
@@ -865,7 +857,6 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool,
                     return f"Error: {e}, can't set the profile for shaft"
                 else:
                     try:
-                        #设旋转轴
                         if absoluteaxis_name=="VDirection":
                             axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
                             axisref=axis2d.GetItem("VDirection")
@@ -893,7 +884,6 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool,
         if absoluteaxis_used==True:
             return "The user has already chosen a line/axis. Please discuss with the user whether this line/axis is an absolute axis or not."
         if absoluteaxis_used==False:
-            #必须在操作前读取Selection
             mydoc=catia.ActiveDocument
             try:
                 selection=mydoc.Selection
@@ -910,14 +900,12 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool,
                 catia.StartCommand("Undo")
                 return "please choose the line again"
             try:
-                #用空引用建空壳shaft
                 emptyref=rootpart.CreateReferenceFromName("")
                 newshaft=rootpart.ShapeFactory.AddNewShaftFromRef(emptyref)
             except Exception as e:
                 return f"Error: {e}, can't create a empty Reference"
             else:
                 try:
-                    #设轮廓
                     profileref=rootpart.CreateReferenceFromObject(mysketch)
                     newshaft.SetProfileElement(profileref)
                 except Exception as e:
@@ -925,14 +913,12 @@ async def add_shaft(body_name:str, sketch_name:str,shaft_name:str,selected:bool,
                     return f"Erroe: {e}, can't set the profile for shaft"
                 else:
                     try:
-                        #设旋转轴
                         s1=brepname.find("Brp:(")
                         s2=brepname.index(")",s1)
                         i=brepname[s1:s2+1]
                         boundary_parentname=re.search(r"\((.+?);",i).group(1)
                         boundary_index=re.search(r";(.+?)\)",i).group(1)
                         brepname2=f"WireREdge:(Wire:(Brp:({boundary_parentname};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
-                        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
                         if boundary_parentname!=sketch_name:
                             catia.StartCommand("Undo")
                             return f"can't find the shape({boundary_parentname}) in body({body_name})"
@@ -973,20 +959,17 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool
         mysketch=mybody.Sketches.Item(sketch_name)
     except:
         return f"can't find the sketch({sketch_name}) in body({body_name})"
-    #虽然shaft是跟随着sketch同属于同一个Body，但这一步还是要有，保持逻辑清晰，从属明确
     if selected==False:
         if absoluteaxis_used==False:
             return "don't choose a line/axis for create a shaft"
         if absoluteaxis_used==True:
             try:
-                #用空引用建空壳groove
                 emptyref=rootpart.CreateReferenceFromName("")
                 newgroove=rootpart.ShapeFactory.AddNewGrooveFromRef(emptyref)
             except Exception as e:
                 return f"Error:{e}, can't create a empty Reference"
             else:
                 try:
-                    #设轮廓
                     profileref=rootpart.CreateReferenceFromObject(mysketch)
                     newgroove.SetProfileElement(profileref)
                 except Exception as e:
@@ -994,7 +977,6 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool
                     return f"Error: {e}, can't set the profile for groove"
                 else:
                     try:
-                        #设旋转轴
                         if absoluteaxis_name=="VDirection":
                             axis2d=mysketch.GeometricElements.Item("AbsoluteAxis")
                             axisref=axis2d.GetItem("VDirection")
@@ -1022,7 +1004,6 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool
         if absoluteaxis_used==True:
             return "The user has already chosen a line/axis. Please discuss with the user whether this line/axis is an absolute axis or not."
         if absoluteaxis_used==False:
-            #必须在操作前读取Selection
             mydoc=catia.ActiveDocument
             try:
                 selection=mydoc.Selection
@@ -1039,14 +1020,12 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool
                 catia.StartCommand("Undo")
                 return "please choose the line again"
             try:
-                #用空引用建空壳groove
                 emptyref=rootpart.CreateReferenceFromName("")
                 newgroove=rootpart.ShapeFactory.AddNewGrooveFromRef(emptyref)
             except Exception as e:
                 return f"Error: {e}, can't create a empty Reference"
             else:
                 try:
-                    #设轮廓
                     profileref=rootpart.CreateReferenceFromObject(mysketch)
                     newgroove.SetProfileElement(profileref)
                 except Exception as e:
@@ -1054,15 +1033,12 @@ async def add_groove(body_name:str,sketch_name:str,groove_name:str,selected:bool
                     return f"Erroe: {e}, can't set the profile for groove"
                 else:
                     try:
-                        #设旋转轴
-                
                         s1=brepname.find("Brp:(")
                         s2=brepname.index(")",s1)
                         i=brepname[s1:s2+1]
                         boundary_parentname=re.search(r"\((.+?);",i).group(1)
                         boundary_index=re.search(r";(.+?)\)",i).group(1)
                         brepname2=f"WireREdge:(Wire:(Brp:({boundary_parentname};{boundary_index});None:(Limits1:();Limits2:());Cf14:());WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29"
-                        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
                         if boundary_parentname!=sketch_name:
                             catia.StartCommand("Undo")
                             return f"can't find the shape({boundary_parentname}) in body({body_name})"
@@ -1119,7 +1095,6 @@ async def add_hole(
     '''
     if selected==True:
         global catia
-        #必须在操作前读取selection
         mydoc=catia.ActiveDocument
         rootpart=mydoc.Part
         try:
@@ -1138,7 +1113,6 @@ async def add_hole(
         boundary_face=brepname[s1:s3]
         boundary_parentname=re.search(r"Brp:\((.+?);",boundary_face).group(1)
         brepname2=f"FSur:({boundary_face};WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MonoFond;MFBRepVersion_CXR29)"
-        #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
         mybody=rootpart.Bodies.Item(body_name)
         try:
             myshape=mybody.Shapes.Item(boundary_parentname)
@@ -1153,8 +1127,6 @@ async def add_hole(
             myhole=rootpart.ShapeFactory.AddNewHoleFromPoint(0,0,0,reference1,l1)
         except:
             return "make sure the choosed plane is right"
-        #Extension延伸
-        #BottomLimit.LimitMode目前只开发三种模式
         if bottomlimit_mode==0:
             myhole.BottomLimit.Dimension.Value=l1
             if hole_bottomtype==2:
@@ -1175,7 +1147,6 @@ async def add_hole(
         myhole.BottomLimit.LimitMode=bottomlimit_mode
         myhole.Diameter.Value=d1
 
-        #Type类型
         if hole_type==0:
             myhole.Type=hole_type
         elif hole_type==1:
@@ -1201,13 +1172,11 @@ async def add_hole(
         elif hole_type==4:
             myhole.Type=hole_type
             myhole.CounterDrilledMode=0
-            #这里把CounterDrilledMode锁定为catCDModeNoCountersunkDiameter；是因为：Catia V5文档没有这个属性，且相关的值的变动Macros也展示不清晰
             myhole.HeadDiameter.Value=d2
             myhole.HeadDepth.Value=l2
             myhole.HeadAngle.Value=a2
             myhole.AnchorMode=hole_anchormode
 
-        #Thread Definition螺纹定义
         if hole_threadingmode==1:
             myhole.ThreadingMode=hole_threadingmode
         elif hole_threadingmode==0:
@@ -1249,7 +1218,6 @@ async def add_edgefillet(body_name:str, edgefillet_name:str,selected:bool, r:int
     '''
     if selected==True:
         global catia
-        #必须在操作前读取selection
         mydoc=catia.ActiveDocument
         rootpart=mydoc.Part
         try:
@@ -1270,7 +1238,6 @@ async def add_edgefillet(body_name:str, edgefillet_name:str,selected:bool, r:int
     boundary_edge=brepname[s1:s3]
     contextobj_name=brepname[s3+1:s2]
     brepname2=f"{boundary_edge};WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29)"
-    #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
     mybody=rootpart.Bodies.Item(body_name)
     try:
         myshape=mybody.Shapes.Item(contextobj_name)
@@ -1305,7 +1272,6 @@ async def add_chamfer(body_name:str, chamfer_name:str,selected:bool, l:float, an
     '''
     if selected==True:
         global catia
-        #必须在操作前读取selection
         mydoc=catia.ActiveDocument
         rootpart=mydoc.Part
         try:
@@ -1326,7 +1292,6 @@ async def add_chamfer(body_name:str, chamfer_name:str,selected:bool, l:float, an
     boundary_edge=brepname[s1:s3]
     contextobj_name=brepname[s3+1:s2]
     brepname2=f"{boundary_edge};WithTemporaryBody;WithoutBuildError;WithSelectingFeatureSupport;MFBRepVersion_CXR29)"
-    #这里的MFBRepVersion_CXR29可能会出错，可用Macros来检验
     mybody=rootpart.Bodies.Item(body_name)
     try:
         myshape=mybody.Shapes.Item(contextobj_name)
